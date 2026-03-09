@@ -1,8 +1,114 @@
 # CineButler
 
+A LangGraph-based media organization workflow that automatically identifies movies/TV series after Transmission downloads complete, renames them according to Infuse scraping rules, and moves them to target folders.
+
+## Features
+
+- Media type detection: movies, TV series, adult content (configurable skip)
+- TMDB scraping: identify titles via LLM + TMDB API
+- Infuse naming rules: `Title (Year)/Title (Year).ext`, `Show (Year)/Season XX/Show.SXXEXX.ext`
+- Smart placement: prefer target with least free space when multiple; notify when space insufficient
+- Safe: uses `mv` only
+- Feishu (Lark) notification: send success/fail/skip results via OpenClaw
+
+## Quick Start
+
+### Install
+
+```bash
+cd /path/to/CineButler
+uv sync
+```
+
+### Configure
+
+1. Copy env template and fill in API keys:
+
+```bash
+cp .env.example .env
+# Edit .env with LLM_PROVIDERS and TMDB_API_KEY
+```
+
+2. Copy `config.yaml.example` to `config.yaml`, set target folders and Feishu open_id.
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `LLM_PROVIDERS` | JSON array of LLM configs by priority (DeepSeek, OpenRouter, etc.) |
+| `TMDB_API_KEY` | TMDB API key for scraping |
+
+### Usage
+
+**CLI** (typically invoked by Transmission hook):
+
+```bash
+uv run cinebutler
+# Reads TR_TORRENT_NAME, TR_TORRENT_DIR, TR_TORRENT_BYTES_DOWNLOADED from env
+
+# Or specify manually
+uv run cinebutler "The Dark Knight.mkv" "/tmp/downloads" 1073741824
+```
+
+**Transmission hook integration**:
+
+- Copy `hooks/50-cinebutler.sh` to transmission-hook's `hooks.d/`
+- Or add to `hooks.conf` HOOK_DIRS: `/path/to/CineButler/hooks`
+- Ensure `50-cinebutler.sh` is executable
+
+## config.yaml
+
+```yaml
+placement_rules:
+  movie:
+    targets: ["/mnt/media/movies", "/mnt/media2/movies"]
+  tv:
+    targets: ["/mnt/media/tv"]
+  adult:
+    action: skip   # skip | move
+
+notification:
+  feishu_target: "ou_xxx"    # Feishu open_id or group chat_id
+  node_bin: "/path/to/nvm/node"
+
+tmdb:
+  api_key: ""     # Leave empty to read from .env
+  language: "zh-CN"
+```
+
+## Project Structure
+
+```
+CineButler/
+├── pyproject.toml
+├── config.yaml
+├── .env.example
+├── src/cinebutler/
+│   ├── main.py        # CLI entry
+│   ├── config.py
+│   ├── llm.py
+│   ├── workflow.py
+│   ├── nodes/         # parse, identify, rename, place, notify
+│   └── tools/         # tmdb, filesystem, notifier
+├── hooks/
+│   └── 50-cinebutler.sh
+└── tests/
+    └── test_workflow.py
+```
+
+## Test
+
+```bash
+uv run pytest tests/ -v
+```
+
+---
+
+## 中文
+
 基于 LangGraph 的媒体整理 Workflow，在 Transmission 下载完成后自动识别电影/剧集、按 Infuse 刮削规则重命名并放入目标文件夹。
 
-## 功能
+### 功能
 
 - 识别媒体类型：电影、剧集、成人内容（可配置跳过）
 - TMDB 刮削：通过 LLM + TMDB API 识别作品
@@ -11,16 +117,16 @@
 - 安全：仅使用 `mv` 命令
 - 飞书通知：通过 OpenClaw 发送成功/失败/跳过结果
 
-## 快速开始
+### 快速开始
 
-### 安装
+#### 安装
 
 ```bash
 cd /path/to/CineButler
 uv sync
 ```
 
-### 配置
+#### 配置
 
 1. 复制环境变量模板并填写 API Key：
 
@@ -31,14 +137,14 @@ cp .env.example .env
 
 2. 复制 `config.yaml.example` 为 `config.yaml`，设置目标文件夹、飞书 open_id 等。
 
-### 环境变量
+#### 环境变量
 
 | 变量 | 说明 |
 |------|------|
 | `LLM_PROVIDERS` | JSON 数组，按优先级配置多个 LLM（DeepSeek、OpenRouter 等） |
 | `TMDB_API_KEY` | TMDB API Key，用于刮削识别 |
 
-### 使用方式
+#### 使用方式
 
 **CLI 调用**（通常由 Transmission Hook 自动调用）：
 
@@ -53,10 +159,10 @@ uv run cinebutler "黑暗骑士.mkv" "/tmp/downloads" 1073741824
 **Transmission Hook 集成**：
 
 - 将 `hooks/50-cinebutler.sh` 复制到 transmission-hook 的 `hooks.d/`
-- 或在 `hooks.conf` 的 `HOOK_DIRS` 中添加：`/home/tth/src/CineButler/hooks`
+- 或在 `hooks.conf` 的 `HOOK_DIRS` 中添加：`/path/to/CineButler/hooks`
 - 确保 `50-cinebutler.sh` 可执行
 
-## 配置文件 config.yaml
+#### 配置文件 config.yaml
 
 ```yaml
 placement_rules:
@@ -76,7 +182,7 @@ tmdb:
   language: "zh-CN"
 ```
 
-## 项目结构
+#### 项目结构
 
 ```
 CineButler/
@@ -96,7 +202,7 @@ CineButler/
     └── test_workflow.py
 ```
 
-## 测试
+#### 测试
 
 ```bash
 uv run pytest tests/ -v
