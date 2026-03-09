@@ -1,0 +1,30 @@
+# 环境与密钥
+.env
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# 测试与构建
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+*.egg-info/
+*.egg
+
+# 用户配置（含敏感信息）
+config.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

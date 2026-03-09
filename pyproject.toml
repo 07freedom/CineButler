@@ -1,0 +1,26 @@
+[project]
+name = "cinebutler"
+version = "0.1.0"
+description = "LangGraph workflow for organizing media files from Transmission with TMDB identification"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.2.0",
+    "pytest>=8.0.0",
+    "langchain-openai>=0.3.0",
+    "langchain-core>=0.3.0",
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+cinebutler = "cinebutler.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cinebutler"]

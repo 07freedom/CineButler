@@ -1,0 +1,21 @@
+# CineButler 配置文件示例
+# 复制为 config.yaml 后修改
+
+placement_rules:
+  movie:
+    targets:
+      - /mnt/media/movies
+      - /mnt/media2/movies
+  tv:
+    targets:
+      - /mnt/media/tv
+  adult:
+    action: skip  # skip | move
+
+notification:
+  feishu_target: "ou_xxx"    # 飞书 open_id 或群 chat_id
+  node_bin: "/path/to/node"  # node 可执行文件路径
+
+tmdb:
+  api_key: ""     # 留空则从 .env 的 TMDB_API_KEY 读取
+  language: "zh-CN"
