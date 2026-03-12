@@ -1,11 +1,22 @@
 """CLI entry for CineButler - run from Transmission hook or manually."""
 
+import logging
 import os
 import sys
 
 
+def _setup_logging() -> None:
+    """Configure logging: INFO to stderr so hook script captures it in log file."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(name)s] %(levelname)s %(message)s",
+        stream=sys.stderr,
+    )
+
+
 def main() -> None:
     """Run workflow with Transmission env vars or CLI args."""
+    _setup_logging()
     name = os.environ.get("TR_TORRENT_NAME") or os.environ.get("TORRENT_NAME", "")
     directory = os.environ.get("TR_TORRENT_DIR") or os.environ.get("TORRENT_DIR", "")
     bytes_dl = int(os.environ.get("TR_TORRENT_BYTES_DOWNLOADED", "0") or "0")
@@ -31,9 +42,12 @@ def main() -> None:
         result = run_workflow(torrent_name=name, torrent_dir=directory, torrent_bytes=bytes_dl)
         status = result.get("status", "unknown")
         if status == "success":
+            print(f"CineButler: {result.get('message', 'Done')} -> {result.get('final_path', '')}")
             sys.exit(0)
         if status == "skipped":
+            print(f"CineButler skipped: {result.get('message', '')}")
             sys.exit(0)
+        print(f"CineButler failed: [{status}] {result.get('message', 'no message')}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"CineButler error: {e}", file=sys.stderr)

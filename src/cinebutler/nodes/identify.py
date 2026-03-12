@@ -1,6 +1,7 @@
 """Identify media via LLM + TMDB tools."""
 
 import json
+import logging
 import re
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -8,28 +9,10 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from cinebutler.config import load_config
 from cinebutler.llm import get_llm_with_fallback
 from cinebutler.models import CineButlerState
+from cinebutler.prompts import IDENTIFY_PROMPT
 from cinebutler.tools.tmdb import make_tmdb_tools
 
-
-IDENTIFY_PROMPT = """你是一个媒体识别助手。根据文件名和种子信息，判断这是电影、剧集、成人内容还是无法识别。
-
-规则：
-- 电影：单集完整影片
-- 剧集：有季/集概念 (S01E01 等)
-- 成人内容：色情、 porn 等 -> media_type 填 "adult"
-- 无法从 TMDB 匹配到可信结果 -> media_type 填 "unknown"
-
-请使用 TMDB 工具搜索并确认。搜索时用英文或原标题。
-
-最终你必须用以下 JSON 格式回复（不要包含其他文字）：
-{{"media_type":"movie"|"tv"|"adult"|"unknown","tmdb_id":数字或null,"title":"作品标题","year":数字或null,"season":数字或null,"episodes":[1,2]}}
-
-文件名: {torrent_name}
-解析出的标题线索: {title}
-解析出的年份: {year}
-解析出的季: {season}
-解析出的集: {episodes}
-"""
+logger = logging.getLogger("cinebutler.identify")
 
 
 def _parse_llm_json(text: str) -> dict | None:
@@ -49,6 +32,7 @@ def identify_node(state: CineButlerState) -> dict:
     config = load_config()
     api_key = config.tmdb.api_key
     if not api_key:
+        logger.warning("TMDB API key not configured")
         return {
             "media_type": "unknown",
             "tmdb_id": None,
@@ -59,7 +43,7 @@ def identify_node(state: CineButlerState) -> dict:
             "message": "TMDB API key not configured",
         }
 
-    tools = make_tmdb_tools(api_key, config.tmdb.language)
+    tools = make_tmdb_tools(api_key, config.tmdb.language, config.tmdb.base_url)
     llm = get_llm_with_fallback()
     llm_with_tools = llm.bind_tools(tools)
 
@@ -71,18 +55,35 @@ def identify_node(state: CineButlerState) -> dict:
         season=state.get("season") or "",
         episodes=episodes,
     )
+    logger.info("LLM prompt:\n%s", prompt)
     messages = [HumanMessage(content=prompt)]
-    MAX_TURNS = 5
-    for _ in range(MAX_TURNS):
-        resp = llm_with_tools.invoke(messages)
+    MAX_TOOL_ROUNDS = 6
+    tool_rounds = 0
+    while tool_rounds <= MAX_TOOL_ROUNDS:
+        try:
+            resp = llm_with_tools.invoke(messages)
+        except Exception as e:
+            logger.error("LLM invoke failed (tool_rounds=%d): %s", tool_rounds, e)
+            break
         if resp.tool_calls:
+            tool_rounds += 1
+            if tool_rounds > MAX_TOOL_ROUNDS:
+                logger.warning("exceeded %d tool rounds, stopping", MAX_TOOL_ROUNDS)
+                break
             for tc in resp.tool_calls:
                 fn = tc["name"]
                 args = tc.get("args", {}) or {}
+                logger.info("round %d tool_call: %s(%s)", tool_rounds, fn, args)
                 tool_map = {t.name: t for t in tools}
                 if fn not in tool_map:
+                    logger.warning("round %d unknown tool: %s", tool_rounds, fn)
                     continue
-                result = tool_map[fn].invoke(args)
+                try:
+                    result = tool_map[fn].invoke(args)
+                except Exception as e:
+                    logger.error("round %d tool %s error: %s", tool_rounds, fn, e)
+                    result = f"Error: {e}"
+                logger.info("round %d tool_result(%s): %.500s", tool_rounds, fn, str(result))
                 messages.append(resp)
                 messages.append(
                     ToolMessage(content=str(result), tool_call_id=tc["id"])
@@ -90,15 +91,17 @@ def identify_node(state: CineButlerState) -> dict:
             continue
         # No tool calls - parse final response
         text = resp.content if isinstance(resp.content, str) else ""
+        logger.info("LLM final text (after %d tool rounds): %.800s", tool_rounds, text)
         parsed = _parse_llm_json(text)
         if parsed:
+            logger.info("parsed JSON: %s", parsed)
             media_type = parsed.get("media_type", "unknown")
             tmdb_id = parsed.get("tmdb_id")
             title = parsed.get("title") or state.get("title", "Unknown")
             year = parsed.get("year") or state.get("year")
             season = parsed.get("season") or state.get("season")
             episodes = parsed.get("episodes") or state.get("episodes", [])
-            return {
+            result = {
                 "media_type": media_type,
                 "tmdb_id": tmdb_id,
                 "title": title,
@@ -106,8 +109,12 @@ def identify_node(state: CineButlerState) -> dict:
                 "season": season,
                 "episodes": episodes,
             }
+            logger.info("identify result: %s", result)
+            return result
+        logger.warning("JSON parse failed, raw text: %.500s", text)
         break
 
+    logger.warning("identify gave up after %d tool rounds, returning unknown", tool_rounds)
     return {
         "media_type": "unknown",
         "tmdb_id": None,

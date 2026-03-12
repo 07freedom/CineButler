@@ -1,4 +1,4 @@
-"""Filesystem tools: mv only, disk space, folder creation."""
+"""Filesystem tools: mv/cp, disk space, folder creation."""
 
 import shutil
 import subprocess
@@ -13,13 +13,13 @@ def get_disk_free_bytes(path: str | Path) -> int:
 
 def ensure_dir(path: str | Path) -> Path:
     """Create directory if not exists. Return Path."""
-    p = Path(path).resolve()
+    p = Path(path).expanduser().resolve()
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def move_file_or_dir(src: str | Path, dst: str | Path) -> None:
-    """Move file or directory using mv command. No cp/rsync - mv only."""
+    """Move file or directory using mv command."""
     src_p = Path(src).resolve()
     dst_p = Path(dst).resolve()
     if not src_p.exists():
@@ -29,6 +29,18 @@ def move_file_or_dir(src: str | Path, dst: str | Path) -> None:
         check=True,
         capture_output=True,
     )
+
+
+def copy_file_or_dir(src: str | Path, dst: str | Path) -> None:
+    """Copy file or directory to dst. Directory uses copytree; file uses copy2."""
+    src_p = Path(src).resolve()
+    dst_p = Path(dst).resolve()
+    if not src_p.exists():
+        raise FileNotFoundError(f"Source does not exist: {src_p}")
+    if src_p.is_dir():
+        shutil.copytree(src_p, dst_p)
+    else:
+        shutil.copy2(src_p, dst_p)
 
 
 def select_target_with_space(
@@ -42,7 +54,7 @@ def select_target_with_space(
     """
     candidates: list[tuple[str, int]] = []
     for t in targets:
-        p = Path(t).resolve()
+        p = Path(t).expanduser().resolve()
         if not p.exists():
             continue
         free = get_disk_free_bytes(p)

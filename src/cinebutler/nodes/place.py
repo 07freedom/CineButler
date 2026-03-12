@@ -1,10 +1,11 @@
-"""Select target directory and perform mv."""
+"""Select target directory and perform mv or cp."""
 
 from pathlib import Path
 
 from cinebutler.config import load_config
 from cinebutler.models import CineButlerState
 from cinebutler.tools.filesystem import (
+    copy_file_or_dir,
     ensure_dir,
     get_size_bytes,
     move_file_or_dir,
@@ -13,8 +14,9 @@ from cinebutler.tools.filesystem import (
 
 
 def place_node(state: CineButlerState) -> dict:
-    """Pick target dir (respecting space), then mv. Uses mv only."""
+    """Pick target dir (respecting space), then mv or cp per FILE_OP_MODE."""
     config = load_config()
+    file_op_mode = config.file_op_mode  # "cp" or "mv"
     media_type = state.get("media_type", "unknown")
     torrent_path = state.get("torrent_path", "")
     new_name = state.get("new_name", "")
@@ -69,7 +71,10 @@ def place_node(state: CineButlerState) -> dict:
         else:
             # Directory: mv whole thing
             final_dest = dest_dir / new_name
-        move_file_or_dir(src, final_dest)
+        if file_op_mode == "mv":
+            move_file_or_dir(src, final_dest)
+        else:
+            copy_file_or_dir(src, final_dest)
     except Exception as e:
         return {
             "status": "failed",
@@ -77,9 +82,10 @@ def place_node(state: CineButlerState) -> dict:
             "target_dir": target_base,
         }
 
+    op_verb = "Moved" if file_op_mode == "mv" else "Copied"
     return {
         "status": "success",
-        "message": "Moved successfully",
+        "message": f"{op_verb} successfully",
         "target_dir": target_base,
         "final_path": str(final_dest),
     }

@@ -55,6 +55,7 @@ class TMDBConfig(BaseModel):
 
     api_key: str = ""
     language: str = "zh-CN"
+    base_url: str = "https://api.themoviedb.org/3"
 
 
 class CineButlerConfig(BaseModel):
@@ -63,6 +64,7 @@ class CineButlerConfig(BaseModel):
     placement_rules: PlacementRules = Field(default_factory=PlacementRules)
     notification: NotificationConfig = Field(default_factory=NotificationConfig)
     tmdb: TMDBConfig = Field(default_factory=TMDBConfig)
+    file_op_mode: str = "cp"  # cp | mv
 
 
 def load_config(config_path: Path | None = None) -> CineButlerConfig:
@@ -78,10 +80,21 @@ def load_config(config_path: Path | None = None) -> CineButlerConfig:
 
     config = CineButlerConfig.model_validate(raw)
 
-    # Override TMDB api_key from env if config is empty
     import os
+
+    # Override TMDB api_key from env if config is empty
     env_tmdb = os.getenv("TMDB_API_KEY", "")
     if env_tmdb and not config.tmdb.api_key:
         config.tmdb.api_key = env_tmdb
+
+    # Override TMDB base_url from env
+    env_tmdb_base = os.getenv("TMDB_BASE_URL", "").strip().rstrip("/")
+    if env_tmdb_base:
+        config.tmdb.base_url = env_tmdb_base
+
+    # FILE_OP_MODE: cp (default) or mv
+    env_file_op = os.getenv("FILE_OP_MODE", "").strip().lower()
+    if env_file_op in ("cp", "mv"):
+        config.file_op_mode = env_file_op
 
     return config

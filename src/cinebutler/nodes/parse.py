@@ -7,8 +7,9 @@ from cinebutler.models import CineButlerState
 
 
 # S01E01, S1E1, 1x01, s01e01, etc.
+# The NxNN pattern requires word boundary to avoid matching resolution like 3840X2160
 EPISODE_PATTERN = re.compile(
-    r"[Ss](\d{1,3})[Ee](\d{1,3})|[Ss]eason\s*(\d{1,3})\s*[Ee]pisode\s*(\d{1,3})|(\d{1,2})[xX](\d{1,3})",
+    r"[Ss](\d{1,3})[Ee](\d{1,3})|[Ss]eason\s*(\d{1,3})\s*[Ee]pisode\s*(\d{1,3})|(?<!\d)(\d{1,2})[xX](\d{1,3})(?!\d)",
     re.IGNORECASE,
 )
 # Year in parentheses: (1994), (2024)
