@@ -9,8 +9,24 @@
 CINEBUTLER_DIR="/home/tth/src/CineButler"
 LOG_FILE="${CINEBUTLER_DIR}/logs/hook.log"
 
+# 日志保留行数上限：超出时裁剪，只保留最新的 N 行
+LOG_MAX_LINES=500
+
 # 初始化日志目录
 mkdir -p "$(dirname "$LOG_FILE")"
+
+# 日志裁剪：行数超过上限时原地截断，只保留最新内容
+trim_log() {
+    [[ ! -f "$LOG_FILE" ]] && return
+    local lines
+    lines=$(wc -l < "$LOG_FILE")
+    if (( lines > LOG_MAX_LINES )); then
+        local tmp="${LOG_FILE}.tmp"
+        tail -n "$LOG_MAX_LINES" "$LOG_FILE" > "$tmp" && mv "$tmp" "$LOG_FILE"
+    fi
+}
+
+trim_log
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
