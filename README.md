@@ -1,4 +1,5 @@
 # CineButler
+![Banner](assets/banner.png)
 
 [English](#cinebutler) | [中文](#中文)
 
