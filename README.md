@@ -58,7 +58,7 @@ cp config.yaml.example config.yaml
 | `targets` | Destination directories per media type (supports multiple drives) |
 | `actions` | Per-type file operation: `mv`, `cp`, or `skip` |
 | `actions.on_duplicate` | Behavior when destination file already exists: `skip` (default) or `overwrite` |
-| `notification` | OpenClaw channel, target ID, and node binary path |
+| `notification` | OpenClaw channel, target ID, and node binary path. Set `channel: none` to disable notifications |
 | `tmdb.language` | Preferred metadata language (e.g. `zh-CN`, `en-US`) |
 | `file_naming` | `infuse` (Infuse/TMDB standard) or `raw` (keep original filename) |
 
@@ -106,7 +106,7 @@ actions:
 
 # Notification via OpenClaw
 notification:
-  channel: feishu   # telegram|whatsapp|discord|slack|feishu|signal|imessage|msteams|mattermost|matrix|...
+  channel: feishu   # telegram|whatsapp|discord|slack|feishu|signal|imessage|msteams|mattermost|matrix|...|none
   target: "ou_xxx"
   node_bin: "/path/to/node/bin"
 
@@ -204,7 +204,7 @@ cp config.yaml.example config.yaml
 | `targets` | 按媒体类型配置目标目录，支持多个路径（多盘） |
 | `actions` | 每种类型的文件操作：`mv`、`cp` 或 `skip` |
 | `actions.on_duplicate` | 目标位置存在同名文件时的行为：`skip`（默认）或 `overwrite` |
-| `notification` | OpenClaw 渠道、接收方 ID、node 路径 |
+| `notification` | OpenClaw 渠道、接收方 ID、node 路径。设置 `channel: none` 可禁用通知 |
 | `tmdb.language` | 元数据首选语言（如 `zh-CN`、`en-US`） |
 | `file_naming` | `infuse`（Infuse/TMDB 标准重命名）或 `raw`（保留原始文件名） |
 
@@ -249,7 +249,7 @@ actions:
 
 # 通过 OpenClaw 发送通知
 notification:
-  channel: feishu   # telegram|whatsapp|discord|slack|feishu|signal|imessage|msteams|mattermost|matrix|...
+  channel: feishu   # telegram|whatsapp|discord|slack|feishu|signal|imessage|msteams|mattermost|matrix|...|none
   target: "ou_xxx"
   node_bin: "/path/to/node/bin"
 

@@ -50,6 +50,10 @@ def notify_node(state: CineButlerState) -> dict:
     config = load_config()
     notif = config.notification
 
+    if notif.channel == "none":
+        logger.info("notification channel is 'none', skipping")
+        return {}
+
     if not notif.target:
         logger.info("notification target not configured, skipping")
         return {}
