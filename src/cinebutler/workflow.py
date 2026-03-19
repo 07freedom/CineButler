@@ -4,50 +4,41 @@ from typing import Literal
 
 from langgraph.graph import END, StateGraph
 
-from cinebutler.config import load_config
 from cinebutler.models import CineButlerState
-from cinebutler.nodes.identify import identify_node
+from cinebutler.nodes.classify import classify_node
+from cinebutler.nodes.match import match_node
+from cinebutler.nodes.name import name_node
 from cinebutler.nodes.notify import notify_node
 from cinebutler.nodes.place import place_node
-from cinebutler.nodes.rename import rename_node
-from cinebutler.nodes.parse import parse_node
 
 
 def _skip_node(state: CineButlerState) -> dict:
-    """Set status=skipped for adult content."""
-    return {"status": "skipped", "message": "Adult content skipped by rule"}
+    """Mark content as skipped (adult or unknown with skip action)."""
+    return {"status": "skipped", "message": f"Skipped: action=skip for media_type={state.get('media_type')}"}
 
 
-def _route_after_identify(state: CineButlerState) -> Literal["skip", "rename"]:
-    """Route: adult+skip -> skip; else -> rename."""
-    config = load_config()
-    media_type = state.get("media_type", "")
-    if media_type == "adult" and config.placement_rules.adult.action == "skip":
-        return "skip"
-    return "rename"
-
-
-def _route_after_place(state: CineButlerState) -> Literal["notify"]:
-    """Always go to notify after place."""
-    return "notify"
+def _route_after_classify(state: CineButlerState) -> Literal["skip", "match"]:
+    """Route based on action determined in classify node."""
+    action = state.get("action", "skip")
+    return "skip" if action == "skip" else "match"
 
 
 def create_workflow() -> StateGraph:
     """Build and compile the CineButler workflow."""
     graph = StateGraph(CineButlerState)
 
-    graph.add_node("parse", parse_node)
-    graph.add_node("identify", identify_node)
+    graph.add_node("classify", classify_node)
     graph.add_node("skip", _skip_node)
-    graph.add_node("rename", rename_node)
+    graph.add_node("match", match_node)
+    graph.add_node("name", name_node)
     graph.add_node("place", place_node)
     graph.add_node("notify", notify_node)
 
-    graph.set_entry_point("parse")
-    graph.add_edge("parse", "identify")
-    graph.add_conditional_edges("identify", _route_after_identify)
+    graph.set_entry_point("classify")
+    graph.add_conditional_edges("classify", _route_after_classify)
     graph.add_edge("skip", "notify")
-    graph.add_edge("rename", "place")
+    graph.add_edge("match", "name")
+    graph.add_edge("name", "place")
     graph.add_edge("place", "notify")
     graph.add_edge("notify", END)
 
@@ -59,15 +50,14 @@ def run_workflow(
     torrent_dir: str,
     torrent_bytes: int = 0,
 ) -> dict:
-    """Run workflow with Transmission env vars. Returns final state."""
+    """Run the CineButler workflow. Returns final state."""
     if not torrent_dir.endswith("/"):
         torrent_dir = f"{torrent_dir}/"
-    torrent_path = f"{torrent_dir}{torrent_name}"
 
     initial: CineButlerState = {
         "torrent_name": torrent_name,
         "torrent_dir": torrent_dir,
-        "torrent_path": torrent_path,
+        "torrent_path": f"{torrent_dir}{torrent_name}",
         "torrent_size": torrent_bytes,
     }
 

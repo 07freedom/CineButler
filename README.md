@@ -9,10 +9,12 @@ A LangGraph-based media organization workflow that automatically identifies movi
 
 - Media type detection: movies, TV series, adult content (configurable skip)
 - TMDB scraping: identify titles via LLM + TMDB API
-- Infuse naming rules: `Title (Year)/Title (Year).ext`, `Show (Year)/Season XX/Show.SXXEXX.ext`
-- Smart placement: prefer target with least free space when multiple; notify when space insufficient
-- Configurable file operation: `cp` (default, keeps original) or `mv`
-- Feishu (Lark) notification: send success/fail/skip results via OpenClaw
+- Infuse naming: `Title (Year).ext`, `Show/Season XX/Show.SXXEXX {tmdb-id}.ext`
+- Smart placement: balanced across multiple target drives, space-aware
+- Smart TV season matching: scans existing folder structure and lets LLM decide the correct subfolder
+- Duplicate detection: skip or overwrite when destination file already exists
+- Configurable per-type action: `mv`, `cp`, or `skip`
+- Notification via OpenClaw: feishu, telegram, and more (with warning alerts for duplicates)
 
 ## Quick Start
 
@@ -25,29 +27,44 @@ uv sync
 
 ### Configure
 
-1. Copy env template and fill in API keys:
+**Step 1 — Secrets (`.env`)**
+
+Put API keys and service URLs here. This file should never be committed.
 
 ```bash
 cp .env.example .env
-# Edit .env with LLM_BASE_URL, LLM_API_KEY, LLM_MODEL and TMDB_API_KEY
+# Edit .env and fill in your keys
 ```
 
-2. Copy `config.yaml.example` to `config.yaml`, set target folders and Feishu open_id.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LLM_BASE_URL` | ✅ | LLM API base URL (e.g. `https://api.deepseek.com`) |
+| `LLM_API_KEY` | ✅ | LLM API key |
+| `LLM_MODEL` | ✅ | Model name (e.g. `deepseek-chat`) |
+| `TMDB_API_KEY` | ✅ | TMDB API key — get one free at [themoviedb.org](https://www.themoviedb.org/settings/api) |
+| `TMDB_BASE_URL` | ☑️ optional | TMDB reverse proxy URL (omit to use the official endpoint) |
 
-### Environment Variables
+**Step 2 — Daily config (`config.yaml`)**
 
-| Variable | Description |
-|----------|-------------|
-| `LLM_BASE_URL` | LLM API base URL (e.g. `https://api.deepseek.com`) |
-| `LLM_API_KEY` | LLM API key |
-| `LLM_MODEL` | Model name (e.g. `deepseek-chat`) |
-| `TMDB_API_KEY` | TMDB API key for scraping |
-| `TMDB_BASE_URL` | *(optional)* TMDB reverse proxy URL |
-| `FILE_OP_MODE` | `cp` (default, safe) or `mv` (move, saves space) |
+Put target directories, actions, notifications, and naming preferences here.
+
+```bash
+cp config.yaml.example config.yaml
+# Edit config.yaml
+```
+
+| Section | Description |
+|---------|-------------|
+| `targets` | Destination directories per media type (supports multiple drives) |
+| `actions` | Per-type file operation: `mv`, `cp`, or `skip` |
+| `actions.on_duplicate` | Behavior when destination file already exists: `skip` (default) or `overwrite` |
+| `notification` | OpenClaw channel, target ID, and node binary path |
+| `tmdb.language` | Preferred metadata language (e.g. `zh-CN`, `en-US`) |
+| `file_naming` | `infuse` (Infuse/TMDB standard) or `raw` (keep original filename) |
 
 ### Usage
 
-**CLI** (typically invoked by Transmission hook):
+**CLI** (typically invoked by the Transmission hook):
 
 ```bash
 uv run cinebutler
@@ -66,63 +83,64 @@ bash hook-install.sh
 
 Or manually:
 
-- Copy `hooks/50-cinebutler.sh` to transmission-hook's `hooks.d/`
-- Or add to `hooks.conf` HOOK_DIRS: `/path/to/CineButler/hooks`
-- Ensure `50-cinebutler.sh` is executable
+- Copy `hooks/50-cinebutler.sh` to your transmission-hook `hooks.d/` directory
+- Ensure the script is executable
 
 ## config.yaml
 
 ```yaml
-placement_rules:
+# Destination directories — multiple paths supported per type
+targets:
   movie:
-    targets: ["/mnt/media/movies", "/mnt/media2/movies"]
+    - /mnt/disk1/Movies
   tv:
-    targets: ["/mnt/media/tv"]
-  adult:
-    action: skip   # skip | move
+    - /mnt/disk1/Series
 
+# File operation per media type
+actions:
+  movie: mv      # mv | cp | skip
+  tv: mv
+  adult: skip
+  unknown: skip
+  on_duplicate: skip  # skip | overwrite
+
+# Notification via OpenClaw
 notification:
-  feishu_target: "ou_xxx"    # Feishu open_id or group chat_id
-  node_bin: "/path/to/nvm/node"
+  channel: feishu   # telegram|whatsapp|discord|slack|feishu|signal|imessage|msteams|mattermost|matrix|...
+  target: "ou_xxx"
+  node_bin: "/path/to/node/bin"
 
 tmdb:
-  api_key: ""     # Leave empty to read from .env
+  api_key: ""       # leave empty — set TMDB_API_KEY in .env instead
   language: "zh-CN"
+
+file_naming: infuse  # infuse | raw
 ```
 
 ## Project Structure
 
 ```
 CineButler/
-├── pyproject.toml
-├── config.yaml
+├── config.yaml          # daily config (targets, actions, notifications)
+├── config.yaml.example
+├── .env                 # secrets (API keys, URLs) — do not commit
 ├── .env.example
-├── hook-install.sh        # Hook install helper
+├── hook-install.sh
 ├── src/cinebutler/
-│   ├── main.py            # CLI entry
+│   ├── main.py
 │   ├── config.py
-│   ├── llm.py
-│   ├── prompts.py
 │   ├── workflow.py
-│   ├── nodes/             # parse, identify, rename, place, notify
-│   └── tools/             # tmdb, filesystem, notifier
+│   ├── nodes/           # classify, match, name, place, notify
+│   └── tools/           # tmdb, filesystem, notifier
 ├── hooks/
 │   └── 50-cinebutler.sh
 └── tests/
-    ├── test_tmdb.py
-    ├── test_movies.sh
-    └── test_series.sh
 ```
 
 ## Test
 
 ```bash
-# Python unit tests
 uv run pytest tests/ -v
-
-# Shell integration tests
-bash tests/test_movies.sh
-bash tests/test_series.sh
 ```
 
 ---
@@ -137,10 +155,12 @@ bash tests/test_series.sh
 
 - 识别媒体类型：电影、剧集、成人内容（可配置跳过）
 - TMDB 刮削：通过 LLM + TMDB API 识别作品
-- Infuse 命名规则：`Title (Year)/Title (Year).ext`、`Show (Year)/Season XX/Show.SXXEXX.ext`
-- 智能放置：多目标时优先选剩余空间最少的；空间不足时通知
-- 可配置文件操作模式：`cp`（默认，保留原始文件）或 `mv`（移动，节省空间）
-- 飞书通知：通过 OpenClaw 发送成功/失败/跳过结果
+- Infuse 命名规则：`Title (Year).ext`、`Show/Season XX/Show.SXXEXX {tmdb-id}.ext`
+- 智能放置：多磁盘均衡、空间感知
+- 剧集季度匹配：扫描已有目录结构，由 LLM 判断放入正确的子文件夹
+- 重复文件检测：目标位置已存在同名文件时可选跳过或覆盖
+- 按类型配置操作：`mv`、`cp` 或 `skip`
+- 通过 OpenClaw 推送通知：支持飞书、Telegram 等（重复文件会触发黄色警告）
 
 ### 快速开始
 
@@ -153,29 +173,44 @@ uv sync
 
 #### 配置
 
-1. 复制环境变量模板并填写 API Key：
+**第一步 — 密钥（`.env`）**
+
+仅放 API Key 和服务地址，不应提交到版本库。
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填写 LLM_BASE_URL、LLM_API_KEY、LLM_MODEL 和 TMDB_API_KEY
+# 编辑 .env，填写实际值
 ```
 
-2. 复制 `config.yaml.example` 为 `config.yaml`，设置目标文件夹、飞书 open_id 等。
+| 变量 | 是否必填 | 说明 |
+|------|----------|------|
+| `LLM_BASE_URL` | ✅ | LLM API 地址（如 `https://api.deepseek.com`） |
+| `LLM_API_KEY` | ✅ | LLM API Key |
+| `LLM_MODEL` | ✅ | 模型名称（如 `deepseek-chat`） |
+| `TMDB_API_KEY` | ✅ | TMDB API Key，在 [themoviedb.org](https://www.themoviedb.org/settings/api) 免费申请 |
+| `TMDB_BASE_URL` | ☑️ 可选 | TMDB 反代地址（留空使用官方地址） |
 
-#### 环境变量
+**第二步 — 日常配置（`config.yaml`）**
 
-| 变量 | 说明 |
-|------|------|
-| `LLM_BASE_URL` | LLM API 地址（如 `https://api.deepseek.com`） |
-| `LLM_API_KEY` | LLM API Key |
-| `LLM_MODEL` | 模型名称（如 `deepseek-chat`） |
-| `TMDB_API_KEY` | TMDB API Key，用于刮削识别 |
-| `TMDB_BASE_URL` | *（可选）* TMDB 反代地址 |
-| `FILE_OP_MODE` | `cp`（默认，安全）或 `mv`（移动，节省空间） |
+目标目录、操作模式、通知渠道、命名规则等均在此配置。
+
+```bash
+cp config.yaml.example config.yaml
+# 编辑 config.yaml
+```
+
+| 配置项 | 说明 |
+|--------|------|
+| `targets` | 按媒体类型配置目标目录，支持多个路径（多盘） |
+| `actions` | 每种类型的文件操作：`mv`、`cp` 或 `skip` |
+| `actions.on_duplicate` | 目标位置存在同名文件时的行为：`skip`（默认）或 `overwrite` |
+| `notification` | OpenClaw 渠道、接收方 ID、node 路径 |
+| `tmdb.language` | 元数据首选语言（如 `zh-CN`、`en-US`） |
+| `file_naming` | `infuse`（Infuse/TMDB 标准重命名）或 `raw`（保留原始文件名） |
 
 #### 使用方式
 
-**CLI 调用**（通常由 Transmission Hook 自动调用）：
+**CLI**（通常由 Transmission Hook 自动调用）：
 
 ```bash
 uv run cinebutler
@@ -192,63 +227,41 @@ uv run cinebutler "黑暗骑士.mkv" "/tmp/downloads" 1073741824
 bash hook-install.sh
 ```
 
-或手动操作：
-
-- 将 `hooks/50-cinebutler.sh` 复制到 transmission-hook 的 `hooks.d/`
-- 或在 `hooks.conf` 的 `HOOK_DIRS` 中添加：`/path/to/CineButler/hooks`
-- 确保 `50-cinebutler.sh` 可执行
+或手动操作：将 `hooks/50-cinebutler.sh` 复制到 transmission-hook 的 `hooks.d/` 并确保可执行。
 
 #### 配置文件 config.yaml
 
 ```yaml
-placement_rules:
+# 目标目录，每种类型支持多个路径
+targets:
   movie:
-    targets: ["/mnt/media/movies", "/mnt/media2/movies"]
+    - /mnt/disk1/Movies
   tv:
-    targets: ["/mnt/media/tv"]
-  adult:
-    action: skip   # skip | move
+    - /mnt/disk1/Series
 
+# 每种媒体类型的操作
+actions:
+  movie: mv      # mv | cp | skip
+  tv: mv
+  adult: skip
+  unknown: skip
+  on_duplicate: skip  # skip | overwrite
+
+# 通过 OpenClaw 发送通知
 notification:
-  feishu_target: "ou_xxx"    # 飞书 open_id 或群 chat_id
-  node_bin: "/path/to/nvm/node"
+  channel: feishu   # telegram|whatsapp|discord|slack|feishu|signal|imessage|msteams|mattermost|matrix|...
+  target: "ou_xxx"
+  node_bin: "/path/to/node/bin"
 
 tmdb:
-  api_key: ""     # 留空则从 .env 读取
+  api_key: ""       # 留空，从 .env 的 TMDB_API_KEY 读取
   language: "zh-CN"
-```
 
-#### 项目结构
-
-```
-CineButler/
-├── pyproject.toml
-├── config.yaml
-├── .env.example
-├── hook-install.sh        # Hook 安装脚本
-├── src/cinebutler/
-│   ├── main.py            # CLI 入口
-│   ├── config.py
-│   ├── llm.py
-│   ├── prompts.py
-│   ├── workflow.py
-│   ├── nodes/             # parse, identify, rename, place, notify
-│   └── tools/             # tmdb, filesystem, notifier
-├── hooks/
-│   └── 50-cinebutler.sh
-└── tests/
-    ├── test_tmdb.py
-    ├── test_movies.sh
-    └── test_series.sh
+file_naming: infuse  # infuse | raw
 ```
 
 #### 测试
 
 ```bash
-# Python 单元测试
 uv run pytest tests/ -v
-
-# Shell 集成测试
-bash tests/test_movies.sh
-bash tests/test_series.sh
 ```

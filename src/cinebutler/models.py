@@ -1,4 +1,4 @@
-"""Data models and Workflow State for CineButler."""
+"""Data models and workflow state for CineButler."""
 
 from typing import Annotated, TypedDict
 
@@ -15,23 +15,29 @@ class CineButlerState(TypedDict, total=False):
     torrent_size: int
     is_directory: bool
 
-    # Identified media info
-    media_type: str  # movie | tv | adult | unknown
+    # Classified media info (from classify node)
+    media_type: str       # movie | tv | adult | unknown
     tmdb_id: int | None
     title: str
     year: int | None
     season: int | None
     episodes: list[int]
+    all_titles: list[str]  # all known titles from TMDB (for match search)
+
+    # Action determined from config after classification
+    action: str            # mv | cp | skip
+
+    # Match result (from match node)
+    existing_path: str | None  # found existing media folder, or None
+    existing_listing: str | None  # directory listing of existing_path
 
     # Placement
+    dest: str              # LLM-determined final destination path (full path)
     target_dir: str
-    new_name: str
-    new_file_name: str | None
-    new_season_folder: str | None
     final_path: str
 
     # Status
-    status: str  # success | failed | skipped
+    status: str            # success | failed | skipped
     message: str
 
     # LLM messages

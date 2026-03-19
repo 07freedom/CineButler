@@ -1,21 +1,75 @@
-# CineButler 配置文件示例
-# 复制为 config.yaml 后修改
+# CineButler configuration example
+# Copy this file to config.yaml and fill in your own values.
 
-placement_rules:
+# ---------------------------------------------------------------------------
+# Target directories by media type
+# Each type supports multiple paths — CineButler picks the drive with the
+# most available space (balanced across disks).
+# ---------------------------------------------------------------------------
+targets:
   movie:
-    targets:
-      - /mnt/media/movies
-      - /mnt/media2/movies
+    - /mnt/disk1/Movies
+    # - /mnt/disk2/Movies   # add more paths for multiple drives
   tv:
-    targets:
-      - /mnt/media/tv
-  adult:
-    action: skip  # skip | move
+    - /mnt/disk1/Series
+    # - /mnt/disk2/Series
 
+# ---------------------------------------------------------------------------
+# File operation per media type
+#   mv   - move the file (removes original from download directory)
+#   cp   - copy the file (keeps original, useful while seeding)
+#   skip - do nothing
+# ---------------------------------------------------------------------------
+actions:
+  movie: mv
+  tv: mv
+  adult: skip
+  unknown: skip
+  on_duplicate: skip  # skip | overwrite
+
+# ---------------------------------------------------------------------------
+# Notification via OpenClaw
+#   channel  - messaging platform to deliver to
+#              Full list: telegram | whatsapp | discord | slack | feishu |
+#                         signal | imessage | msteams | mattermost | matrix |
+#                         googlechat | irc | line | zalo | synology-chat | ...
+#   target   - channel-specific recipient ID
+#              Feishu:   open_id of a user or chat (starts with "ou_" or "oc_")
+#              Telegram: numeric chat_id or @username
+#   node_bin - directory containing the `node` and `openclaw` binaries
+#              Run `which node` to locate the correct path.
+# ---------------------------------------------------------------------------
 notification:
-  feishu_target: "ou_xxx"    # 飞书 open_id 或群 chat_id
-  node_bin: "/path/to/node"  # node 可执行文件路径
+  channel: feishu
+  target: ""
+  node_bin: "/home/YOUR_USERNAME/.nvm/versions/node/v22.17.0/bin"
 
+# ---------------------------------------------------------------------------
+# TMDB (The Movie Database) API
+#   api_key  - leave empty here and set TMDB_API_KEY in .env instead
+#              Get a free key at: https://www.themoviedb.org/settings/api
+#   language - preferred language for titles and metadata (BCP 47 tag)
+#              Examples: en-US  zh-CN  ja-JP  fr-FR
+# ---------------------------------------------------------------------------
 tmdb:
-  api_key: ""     # 留空则从 .env 的 TMDB_API_KEY 读取
+  api_key: ""       # recommended: set via TMDB_API_KEY in .env
   language: "zh-CN"
+
+# ---------------------------------------------------------------------------
+# File naming mode
+#   infuse - rename to Infuse/TMDB standard (recommended for Infuse users)
+#            TV:    ShowName.S01E01 {tmdb-12345}.mkv
+#            Movie: Movie Title (2024).mkv
+#   raw    - keep the original filename from the torrent
+# ---------------------------------------------------------------------------
+file_naming: infuse
+
+# ---------------------------------------------------------------------------
+# Custom naming rules (optional)
+# User-defined rules injected into the LLM naming prompt with HIGHEST priority.
+# Each entry is a plain-text instruction the LLM will follow when deciding
+# the destination path and filename.
+# ---------------------------------------------------------------------------
+# naming_rules:
+#   - "For English-titled works, prepend the Chinese title from TMDB separated by a dot, e.g. 黑暗骑士.The Dark Knight (2008)"
+#   - "Always use simplified Chinese for folder names when available"

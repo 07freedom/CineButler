@@ -100,6 +100,23 @@ def search_multi(api_key: str, query: str, language: str = "zh-CN", base_url: st
     return out
 
 
+def get_tv_titles(api_key: str, tv_id: int, base_url: str = TMDB_BASE) -> list[str]:
+    """获取 TV 剧集所有已知名称：主标题、原始标题、所有语言译名。"""
+    titles: set[str] = set()
+    with _client(api_key, "en-US", base_url) as c:
+        r = c.get(f"/tv/{tv_id}")
+        if r.status_code == 200:
+            d = r.json()
+            titles.update(filter(None, [d.get("name"), d.get("original_name")]))
+        r2 = c.get(f"/tv/{tv_id}/translations")
+        if r2.status_code == 200:
+            for t in r2.json().get("translations", []):
+                name = t.get("data", {}).get("name", "")
+                if name:
+                    titles.add(name)
+    return list(titles)
+
+
 def make_tmdb_tools(api_key: str, language: str = "zh-CN", base_url: str = TMDB_BASE) -> list:
     """Create LangChain tools for LLM, bound with api_key."""
 

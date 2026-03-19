@@ -1,5 +1,6 @@
-"""Select target directory and perform mv or cp."""
+"""Execute mv or cp to the LLM-determined destination."""
 
+import logging
 from pathlib import Path
 
 from cinebutler.config import load_config
@@ -12,80 +13,96 @@ from cinebutler.tools.filesystem import (
     select_target_with_space,
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _find_duplicates(src: Path, dest: Path) -> list[str]:
+    """Return list of filenames that already exist at destination."""
+    duplicates = []
+    if src.is_dir():
+        for child in src.iterdir():
+            if child.is_file() and (dest / child.name).exists():
+                duplicates.append(child.name)
+    else:
+        if dest.exists() and dest.is_file():
+            duplicates.append(dest.name)
+    return duplicates
+
 
 def place_node(state: CineButlerState) -> dict:
-    """Pick target dir (respecting space), then mv or cp per FILE_OP_MODE."""
+    """Move or copy torrent to the destination decided by name_node."""
     config = load_config()
-    file_op_mode = config.file_op_mode  # "cp" or "mv"
     media_type = state.get("media_type", "unknown")
     torrent_path = state.get("torrent_path", "")
-    new_name = state.get("new_name", "")
-    new_file_name = state.get("new_file_name")
-    new_season_folder = state.get("new_season_folder")
-    is_directory = state.get("is_directory", False)
+    dest = state.get("dest", "")
 
-    if media_type == "adult":
-        rule = config.placement_rules.adult
-        if getattr(rule, "action", "skip") == "skip":
-            return {"status": "skipped", "message": "Adult content skipped by rule"}
-        targets = getattr(rule, "targets", []) or []
-    elif media_type == "movie":
-        rule = config.placement_rules.movie
-        targets = rule.targets or []
-    elif media_type == "tv":
-        rule = config.placement_rules.tv
-        targets = rule.targets or []
-    else:
-        return {"status": "failed", "message": f"Cannot place media_type={media_type}"}
+    # Read action from config (mv | cp | skip)
+    action = getattr(config.actions, media_type, "skip")
 
-    if not targets:
-        return {"status": "failed", "message": "No target directories configured"}
-
-    try:
-        size = get_size_bytes(torrent_path) if torrent_path else 0
-    except OSError:
-        return {"status": "failed", "message": f"Cannot get size: {torrent_path}"}
-
-    target_base = select_target_with_space(targets, size)
-    if not target_base:
-        return {
-            "status": "failed",
-            "message": f"None of the target directories have enough space (need ~{size / (1024**3):.1f} GB)",
-            "target_dir": targets[0],
-        }
+    if not dest:
+        return {"status": "failed", "message": "No destination path from name node"}
 
     src = Path(torrent_path)
     if not src.exists():
         return {"status": "failed", "message": f"Source does not exist: {torrent_path}"}
 
-    dest_dir = Path(target_base)
+    dest_path = Path(dest)
+
+    # Duplicate detection
+    duplicates = _find_duplicates(src, dest_path if src.is_dir() else dest_path)
+    if duplicates:
+        on_dup = config.actions.on_duplicate
+        dup_list = ", ".join(duplicates)
+        if on_dup == "skip":
+            logger.warning("duplicate files found, skipping: %s", dup_list)
+            return {
+                "status": "duplicate",
+                "message": f"Duplicate files already exist: {dup_list}",
+                "final_path": dest,
+                "target_dir": str(dest_path.parent),
+            }
+        else:
+            logger.info("duplicate files found, overwriting: %s", dup_list)
+
+    # Disk space check
     try:
-        if media_type == "movie" and not is_directory and new_file_name:
-            # Single file movie: wrap in folder
-            wrap_dir = ensure_dir(dest_dir / new_name)
-            final_dest = wrap_dir / new_file_name
-        elif media_type == "tv" and not is_directory and new_season_folder and new_file_name:
-            # Single file TV: Show/Season XX/file
-            season_dir = ensure_dir(dest_dir / new_name / new_season_folder)
-            final_dest = season_dir / new_file_name
-        else:
-            # Directory: mv whole thing
-            final_dest = dest_dir / new_name
-        if file_op_mode == "mv":
-            move_file_or_dir(src, final_dest)
-        else:
-            copy_file_or_dir(src, final_dest)
-    except Exception as e:
+        size = get_size_bytes(torrent_path)
+    except OSError:
+        size = 0
+
+    targets = (
+        config.targets.movie if media_type == "movie" else config.targets.tv
+    )
+    if targets and not select_target_with_space(targets, size):
         return {
             "status": "failed",
-            "message": str(e),
-            "target_dir": target_base,
+            "message": f"No target directory has enough space (need ~{size / (1024**3):.1f} GB)",
+            "target_dir": targets[0] if targets else "",
         }
 
-    op_verb = "Moved" if file_op_mode == "mv" else "Copied"
+    try:
+        ensure_dir(dest_path.parent if not src.is_dir() else dest_path)
+        if src.is_dir() and dest_path.exists() and dest_path.is_dir():
+            # Destination directory exists: move/copy contents of src into it
+            for child in src.iterdir():
+                child_dest = dest_path / child.name
+                if action == "mv":
+                    move_file_or_dir(child, child_dest)
+                else:
+                    copy_file_or_dir(child, child_dest)
+        else:
+            if action == "mv":
+                move_file_or_dir(src, dest_path)
+            else:
+                copy_file_or_dir(src, dest_path)
+    except Exception as e:
+        return {"status": "failed", "message": str(e), "target_dir": str(dest_path.parent)}
+
+    op_verb = "Moved" if action == "mv" else "Copied"
+    logger.info("%s %s -> %s", op_verb, torrent_path, dest)
     return {
         "status": "success",
         "message": f"{op_verb} successfully",
-        "target_dir": target_base,
-        "final_path": str(final_dest),
+        "target_dir": str(dest_path.parent),
+        "final_path": dest,
     }

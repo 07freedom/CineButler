@@ -1,5 +1,6 @@
 """Configuration loading: YAML + .env for CineButler."""
 
+import os
 from pathlib import Path
 
 import yaml
@@ -25,28 +26,31 @@ def _load_env() -> None:
     load_dotenv(root / ".env", override=False)
 
 
-# --- Pydantic models for config ---
+# --- Pydantic models ---
 
 
-class PlacementRule(BaseModel):
-    """Placement rule for a media type."""
+class TargetsConfig(BaseModel):
+    """Target directories by media type."""
 
-    targets: list[str] = Field(default_factory=list)
-    action: str = "move"  # move | skip
+    movie: list[str] = Field(default_factory=list)
+    tv: list[str] = Field(default_factory=list)
 
 
-class PlacementRules(BaseModel):
-    """All placement rules."""
+class ActionsConfig(BaseModel):
+    """File operation action per media type: mv | cp | skip."""
 
-    movie: PlacementRule = Field(default_factory=lambda: PlacementRule(targets=[]))
-    tv: PlacementRule = Field(default_factory=lambda: PlacementRule(targets=[]))
-    adult: PlacementRule = Field(default_factory=lambda: PlacementRule(action="skip"))
+    movie: str = "mv"
+    tv: str = "mv"
+    adult: str = "skip"
+    unknown: str = "skip"
+    on_duplicate: str = "skip"  # skip | overwrite
 
 
 class NotificationConfig(BaseModel):
-    """Notification settings."""
+    """Notification settings via OpenClaw."""
 
-    feishu_target: str = ""
+    channel: str = "feishu"  # feishu | telegram | slack | ...
+    target: str = ""          # channel-specific target ID
     node_bin: str = "/home/tth/.nvm/versions/node/v22.17.0/bin"
 
 
@@ -61,14 +65,16 @@ class TMDBConfig(BaseModel):
 class CineButlerConfig(BaseModel):
     """Full CineButler configuration."""
 
-    placement_rules: PlacementRules = Field(default_factory=PlacementRules)
+    targets: TargetsConfig = Field(default_factory=TargetsConfig)
+    actions: ActionsConfig = Field(default_factory=ActionsConfig)
     notification: NotificationConfig = Field(default_factory=NotificationConfig)
     tmdb: TMDBConfig = Field(default_factory=TMDBConfig)
-    file_op_mode: str = "cp"  # cp | mv
+    file_naming: str = "infuse"  # infuse | raw
+    naming_rules: list[str] = Field(default_factory=list)
 
 
 def load_config(config_path: Path | None = None) -> CineButlerConfig:
-    """Load config from YAML, override with .env."""
+    """Load config from YAML, then apply .env overrides."""
     _load_env()
 
     root = _project_root()
@@ -80,8 +86,6 @@ def load_config(config_path: Path | None = None) -> CineButlerConfig:
 
     config = CineButlerConfig.model_validate(raw)
 
-    import os
-
     # Override TMDB api_key from env if config is empty
     env_tmdb = os.getenv("TMDB_API_KEY", "")
     if env_tmdb and not config.tmdb.api_key:
@@ -91,10 +95,5 @@ def load_config(config_path: Path | None = None) -> CineButlerConfig:
     env_tmdb_base = os.getenv("TMDB_BASE_URL", "").strip().rstrip("/")
     if env_tmdb_base:
         config.tmdb.base_url = env_tmdb_base
-
-    # FILE_OP_MODE: cp (default) or mv
-    env_file_op = os.getenv("FILE_OP_MODE", "").strip().lower()
-    if env_file_op in ("cp", "mv"):
-        config.file_op_mode = env_file_op
 
     return config
