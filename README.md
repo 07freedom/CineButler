@@ -5,6 +5,8 @@
 
 A LangGraph-based media organization workflow that automatically identifies movies/TV series after Transmission downloads complete, renames them according to Infuse scraping rules, and moves them to target folders.
 
+![Workflow](assets/Workflow.png)
+
 ## Features
 
 - Media type detection: movies, TV series, adult content (configurable skip)
